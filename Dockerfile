@@ -23,9 +23,10 @@ ENV NODE_ENV=production \
     NODE_OPTIONS="--max_old_space_size=4096"
 RUN yarn build
 
-FROM golang:1.19.4-alpine3.17 as go-builder
+FROM docker.io/library/golang:1.19.4-bullseye as go-builder
 
-RUN apk add --no-cache gcc g++
+RUN apt-get update && \
+	apt-get install -y gcc g++ gcc-aarch64-linux-gnu
 
 WORKDIR $GOPATH/src/github.com/credativ/plutono
 
@@ -39,9 +40,10 @@ ENV SOURCE_GIT_REV_SHORT=$SOURCE_GIT_REV_SHORT
 
 RUN go mod verify
 RUN go run build.go build
+RUN go run build.go -goarch arm64 -cc aarch64-linux-gnu-gcc build
 
 # Final stage
-FROM alpine:3.17
+FROM docker.io/library/debian:bullseye-slim
 
 ARG PL_UID="472"
 ARG PL_GID="0"
@@ -56,9 +58,6 @@ ENV PATH="/usr/share/plutono/bin:$PATH" \
 
 WORKDIR $PL_PATHS_HOME
 
-RUN apk add --no-cache ca-certificates bash tzdata && \
-    apk add --no-cache openssl musl-utils
-
 COPY conf ./conf
 
 RUN if [ ! $(getent group "$PL_GID") ]; then \
@@ -67,7 +66,7 @@ RUN if [ ! $(getent group "$PL_GID") ]; then \
 
 RUN export PL_GID_NAME=$(getent group $PL_GID | cut -d':' -f1) && \
     mkdir -p "$PL_PATHS_HOME/.aws" && \
-    adduser -S -u $PL_UID -G "$PL_GID_NAME" plutono && \
+    adduser --system --uid $PL_UID --ingroup "$PL_GID_NAME" plutono && \
     mkdir -p "$PL_PATHS_PROVISIONING/datasources" \
              "$PL_PATHS_PROVISIONING/dashboards" \
              "$PL_PATHS_PROVISIONING/notifiers" \
